@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Brick Breaker - Image Mode</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            touch-action: none;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            background: radial-gradient(circle at center, #2a2a2a 0%, #111 100%);
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.85); /* Darker for better text visibility */
+            transition: opacity 0.3s ease;
+            z-index: 10;
+        }
+        .hidden {
+            opacity: 0;
+            pointer-events: none !important;
+        }
+        h1 {
+            font-size: 4rem;
+            margin: 0 0 10px 0;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            background: linear-gradient(45deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(0, 210, 255, 0.3);
+        }
+        p {
+            font-size: 1.2rem;
+            color: #ccc;
+            margin-bottom: 20px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            pointer-events: auto;
+        }
+        button, .file-upload-label {
+            pointer-events: auto;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: white;
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(58, 123, 213, 0.5);
+            transition: transform 0.1s, box-shadow 0.1s, filter 0.2s;
+            outline: none;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+        .file-upload-label {
+            background: linear-gradient(90deg, #ff00cc, #3333ff);
+            box-shadow: 0 0 15px rgba(255, 0, 204, 0.4);
+        }
+        button:active, .file-upload-label:active {
+            transform: scale(0.95);
+        }
+        input[type="file"] {
+            display: none;
+        }
+        
+        #score-board, #lives-board {
+            position: absolute;
+            top: 20px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px black;
+            z-index: 5;
+            pointer-events: none;
+        }
+        #score-board { left: 20px; }
+        #lives-board { right: 20px; }
+
+        @media (max-width: 600px) {
+            h1 { font-size: 2.5rem; }
+            .btn-group { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="score-board">Score: 0</div>
+    <div id="lives-board">Lives: 3</div>
+
+    <div id="ui-layer">
+        <h1 id="game-title">IMAGE BREAKER</h1>
+        <p id="game-message">Upload your photo to smash it!</p>
+        
+        <div class="btn-group">
+            <label for="image-upload" class="file-upload-label">
+                📷 Upload Photo
+            </label>
+            <input type="file" id="image-upload" accept="image/*">
+            <button id="start-btn">PLAY</button>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const uiLayer = document.getElementById('ui-layer');
+    const startBtn = document.getElementById('start-btn');
+    const imageUpload = document.getElementById('image-upload');
+    const gameTitle = document.getElementById('game-title');
+    const gameMessage = document.getElementById('game-message');
+    const scoreBoard = document.getElementById('score-board');
+    const livesBoard = document.getElementById('lives-board');
+
+    // Default image (City Night placeholder)
+    let brickImage = new Image();
+    brickImage.src = 'https://images.unsplash.com/photo-1495036082260-14cc42603310?q=80&w=1000&auto=format&fit=crop'; 
+    let isImageLoaded = false;
+
+    brickImage.onload = () => { isImageLoaded = true; };
+
+    // Handle User Image Upload
+    imageUpload.addEventListener('change', function(e) {
+        if (e.target.files && e.target.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                brickImage = new Image();
+                brickImage.onload = () => {
+                    isImageLoaded = true;
+                    // Provide visual feedback
+                    gameMessage.textContent = "Photo Loaded! Press Play.";
+                    gameMessage.style.color = "#00ff00";
+                };
+                brickImage.src = e.target.result;
+            }
+            reader.readAsDataURL(e.target.files[0]);
+        }
+    });
+
+    let animationId;
+    let score = 0;
+    let lives = 3;
+    let isGameRunning = false;
+    let isGameOver = false;
+
+    const ball = {
+        x: 0, y: 0,
+        dx: 4, dy: -4,
+        radius: 8,
+        speed: 6,
+        color: '#fff'
+    };
+
+    const paddle = {
+        width: 100,
+        height: 15,
+        x: 0, y: 0,
+        speed: 8,
+        color: '#00d2ff'
+    };
+
+    let bricks = [];
+    const brickConfig = {
+        rowCount: 6, // More rows for better image resolution
+        colCount: 6, 
+        padding: 4, // Smaller padding to make image look cohesive
+        offsetTop: 60,
+        offsetLeft: 35,
+        height: 30,
+        colors: [] // Not used in image mode
+    };
+
+    let particles = [];
+
+    // --- Core Functions ---
+
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        paddle.y = canvas.height - 40;
+        
+        // Dynamic Layout Calculation
+        const maxBrickWidth = 100; // Wider bricks for image
+        const minCols = 4;
+        
+        // Calculate columns to fit screen width minus margins
+        const availableWidth = canvas.width - (2 * brickConfig.offsetLeft);
+        brickConfig.colCount = Math.floor(availableWidth / (maxBrickWidth + brickConfig.padding));
+        if (brickConfig.colCount < minCols) brickConfig.colCount = minCols;
+
+        // Calculate exact brick width to fill the space perfectly
+        const totalPadding = (brickConfig.colCount - 1) * brickConfig.padding;
+        brickConfig.width = (availableWidth - totalPadding) / brickConfig.colCount;
+
+        if (!isGameRunning && !isGameOver) {
+            paddle.x = (canvas.width - paddle.width) / 2;
+            resetBall();
+            initBricks();
+        }
+    }
+
+    function initBricks() {
+        bricks = [];
+        for (let c = 0; c < brickConfig.colCount; c++) {
+            bricks[c] = [];
+            for (let r = 0; r < brickConfig.rowCount; r++) {
+                bricks[c][r] = { 
+                    x: 0, 
+                    y: 0, 
+                    status: 1,
+                    // We calculate image source coordinates here if we wanted static mapping,
+                    // but calculating in draw loop is flexible if image changes
+                };
+            }
+        }
+    }
+
+    function resetBall() {
+        ball.x = canvas.width / 2;
+        ball.y = canvas.height - 60;
+        ball.dx = (Math.random() * 2 - 1) * ball.speed; 
+        ball.dy = -ball.speed;
+        
+        const speed = Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy);
+        ball.dx = (ball.dx / speed) * ball.speed;
+        ball.dy = (ball.dy / speed) * ball.speed;
+    }
+
+    // --- Input ---
+    function mouseMoveHandler(e) {
+        if(!isGameRunning) return;
+        const relativeX = e.clientX - canvas.offsetLeft;
+        if (relativeX > 0 && relativeX < canvas.width) {
+            paddle.x = relativeX - paddle.width / 2;
+        }
+    }
+    function touchMoveHandler(e) {
+        if(!isGameRunning) return;
+        e.preventDefault(); 
+        const relativeX = e.touches[0].clientX - canvas.offsetLeft;
+        if (relativeX > 0 && relativeX < canvas.width) {
+            paddle.x = relativeX - paddle.width / 2;
+        }
+    }
+    document.addEventListener("mousemove", mouseMoveHandler, false);
+    document.addEventListener("touchmove", touchMoveHandler, { passive: false });
+    window.addEventListener("resize", resizeCanvas);
+
+    // --- Particles ---
+    function createParticles(x, y, color) {
+        for(let i=0; i<6; i++) {
+            particles.push({
+                x: x, y: y,
+                dx: (Math.random() - 0.5) * 5,
+                dy: (Math.random() - 0.5) * 5,
+                life: 20,
+                color: color || '#fff',
+                size: Math.random() * 3 + 1
+            });
+        }
+    }
+    function updateParticles() {
+        for(let i=0; i<particles.length; i++) {
+            let p = particles[i];
+            p.x += p.dx; p.y += p.dy;
+            p.life--; p.size *= 0.9;
+        }
+        particles = particles.filter(p => p.life > 0);
+    }
+
+    // --- Drawing ---
+    function drawBall() {
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = ball.color;
+        ctx.fill();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "white";
+        ctx.closePath();
+        ctx.shadowBlur = 0;
+    }
+
+    function drawPaddle() {
+        ctx.beginPath();
+        ctx.roundRect(paddle.x, paddle.y, paddle.width, paddle.height, 5);
+        ctx.fillStyle = paddle.color;
+        ctx.fill();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = "#00d2ff";
+        ctx.closePath();
+        ctx.shadowBlur = 0;
+    }
+
+    function drawBricks() {
+        // Calculate the total area the bricks cover
+        // We use this to map the image proportionally across the grid
+        const totalGridWidth = (brickConfig.colCount * brickConfig.width) + ((brickConfig.colCount - 1) * brickConfig.padding);
+        const totalGridHeight = (brickConfig.rowCount * brickConfig.height) + ((brickConfig.rowCount - 1) * brickConfig.padding);
+
+        for (let c = 0; c < brickConfig.colCount; c++) {
+            for (let r = 0; r < brickConfig.rowCount; r++) {
+                if (bricks[c][r].status === 1) {
+                    const brickX = (c * (brickConfig.width + brickConfig.padding)) + brickConfig.offsetLeft;
+                    const brickY = (r * (brickConfig.height + brickConfig.padding)) + brickConfig.offsetTop;
+                    
+                    bricks[c][r].x = brickX;
+                    bricks[c][r].y = brickY;
+                    
+                    // Image Slicing Logic
+                    if (isImageLoaded) {
+                        // 1. Calculate percentage position of this brick in the grid
+                        const pctX = c / brickConfig.colCount;
+                        const pctY = r / brickConfig.rowCount;
+                        const pctW = 1 / brickConfig.colCount;
+                        const pctH = 1 / brickConfig.rowCount;
+
+                        // 2. Map to source image coordinates
+                        const sx = pctX * brickImage.naturalWidth;
+                        const sy = pctY * brickImage.naturalHeight;
+                        const sWidth = pctW * brickImage.naturalWidth;
+                        const sHeight = pctH * brickImage.naturalHeight;
+
+                        // 3. Draw image slice
+                        ctx.drawImage(brickImage, sx, sy, sWidth, sHeight, brickX, brickY, brickConfig.width, brickConfig.height);
+                        
+                        // Optional: Add a subtle border to distinguish bricks
+                        ctx.strokeStyle = "rgba(0,0,0,0.2)";
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(brickX, brickY, brickConfig.width, brickConfig.height);
+                    } else {
+                        // Fallback if image fails
+                        ctx.fillStyle = "#333";
+                        ctx.fillRect(brickX, brickY, brickConfig.width, brickConfig.height);
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Game Loop ---
+    function update() {
+        if (!isGameRunning) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        drawBricks();
+        drawBall();
+        drawPaddle();
+        
+        // Draw particles (simple white sparks for image mode)
+        particles.forEach(p => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.fill();
+            ctx.closePath();
+        });
+        updateParticles();
+
+        // --- Collision Logic ---
+        
+        // Brick Collision
+        for (let c = 0; c < brickConfig.colCount; c++) {
+            for (let r = 0; r < brickConfig.rowCount; r++) {
+                const b = bricks[c][r];
+                if (b.status === 1) {
+                    if (ball.x > b.x && ball.x < b.x + brickConfig.width && 
+                        ball.y > b.y && ball.y < b.y + brickConfig.height) {
+                        
+                        ball.dy = -ball.dy;
+                        b.status = 0;
+                        score++;
+                        scoreBoard.textContent = `Score: ${score}`;
+                        
+                        // Sample color from the image for particle effect? 
+                        // Too complex for basic canvas without offscreen buffer. 
+                        // We'll use a nice generic color or paddle color.
+                        createParticles(b.x + brickConfig.width/2, b.y + brickConfig.height/2, "#ff00cc");
+
+                        if (score === brickConfig.rowCount * brickConfig.colCount) {
+                            gameOver(true);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Wall Collision
+        if (ball.x + ball.dx > canvas.width - ball.radius || ball.x + ball.dx < ball.radius) {
+            ball.dx = -ball.dx;
+        }
+        if (ball.y + ball.dy < ball.radius) {
+            ball.dy = -ball.dy;
+        } 
+        
+        // Paddle Collision (Improved Top-Surface Logic)
+        else if (ball.dy > 0 && 
+            ball.y + ball.radius >= paddle.y && 
+            ball.y - ball.radius <= paddle.y + paddle.height &&
+            ball.x + ball.radius >= paddle.x &&
+            ball.x - ball.radius <= paddle.x + paddle.width) {
+            
+            ball.dy = -Math.abs(ball.dy); 
+            ball.y = paddle.y - ball.radius; // Snap
+
+            // English (Spin)
+            let hitPoint = ball.x - (paddle.x + paddle.width / 2);
+            hitPoint = hitPoint / (paddle.width / 2);
+            let angle = hitPoint * (Math.PI / 3);
+            
+            let currentSpeed = Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy);
+            currentSpeed = Math.min(currentSpeed + 0.2, 12);
+            
+            ball.dx = currentSpeed * Math.sin(angle);
+            ball.dy = -currentSpeed * Math.cos(angle);
+        }
+        
+        // Death
+        else if (ball.y + ball.radius > canvas.height) {
+            lives--;
+            livesBoard.textContent = `Lives: ${lives}`;
+            createParticles(ball.x, ball.y, "#fff");
+            
+            if (!lives) {
+                gameOver(false);
+            } else {
+                resetBall();
+            }
+        }
+
+        ball.x += ball.dx;
+        ball.y += ball.dy;
+
+        animationId = requestAnimationFrame(update);
+    }
+
+    function startGame() {
+        score = 0;
+        lives = 3;
+        scoreBoard.textContent = `Score: ${score}`;
+        livesBoard.textContent = `Lives: ${lives}`;
+        
+        isGameRunning = true;
+        isGameOver = false;
+        
+        uiLayer.classList.add('hidden');
+        
+        resetBall();
+        initBricks();
+        update();
+    }
+
+    function gameOver(win) {
+        isGameRunning = false;
+        isGameOver = true;
+        cancelAnimationFrame(animationId);
+        
+        uiLayer.classList.remove('hidden');
+        if (win) {
+            gameTitle.textContent = "YOU WIN!";
+            gameMessage.textContent = `Great Job! Final Score: ${score}`;
+            gameMessage.style.color = "#ccc";
+            startBtn.textContent = "Play Again";
+        } else {
+            gameTitle.textContent = "GAME OVER";
+            gameMessage.textContent = `Final Score: ${score}`;
+            gameMessage.style.color = "#ccc";
+            startBtn.textContent = "Try Again";
+        }
+    }
+
+    startBtn.addEventListener('click', startGame);
+    resizeCanvas();
+    initBricks();
+    
+    // Initial draw to show the "puzzle" before starting
+    // We need to wait for image to load if using default
+    if (brickImage.complete) {
+        drawBricks();
+        drawPaddle();
+    } else {
+        brickImage.onload = () => {
+            isImageLoaded = true;
+            drawBricks();
+            drawPaddle();
+        }
+    }
+
+</script>
+</body>
+</html>
